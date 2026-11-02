@@ -1,0 +1,22 @@
+# Game data (from the user's own disc; not redistributable)
+*.nrg
+extracted/
+save/
+
+# Generated from SKIPIT.EXE: rebuild with `make gen`
+gen/
+build/
+quarantine
+
+# Analysis outputs derived from the game binary (Ghidra project, dumps, decompilation)
+analysis/ghidra_proj/
+analysis/*.bin
+analysis/*.elf
+analysis/*.pkl
+analysis/skipit_decomp.c
+
+# Local tooling / logs
+tools/.venv/
+__pycache__/
+*.log
+.DS_Store
