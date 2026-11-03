@@ -2,10 +2,14 @@
 
 The DOS CD version's `SKIPIT.EXE` (Watcom C/C++32, DOS/4GW) is translated instruction-by-instruction
 into C and linked against a small runtime that emulates DOS, DPMI, VGA Mode X, the PIT/PIC, the keyboard
-and an MSCDEX CD-ROM drive with CD audio. It's native code on macOS/Linux/Windows; no emulator is involved.
+and an MSCDEX CD-ROM drive with CD audio. The result is a native program; no emulator is involved.
+
+**This repository contains no game data.** You need your own copy of the Quarantine DOS CD-ROM; the
+game's executable is translated on your machine during setup.
 
 ## Layout
-- `extracted/` — data pulled from `Quarantine.nrg` (`cd/` files, `track02–12.wav` CD audio)
+- `extracted/` — your CD's files (`cd/`) and audio tracks (`track02–12.wav`), made by `tools/extract.py`
+- `tools/extract.py` — CD image extractor (.cue/.bin or .nrg; ISO 9660 + CD audio to WAV)
 - `tools/le.py` — LE loader (objects, fixups, rebasing)
 - `tools/recomp.py` — the recompiler: function discovery + x86 → C emitter, writes `gen/`
 - `tools/difftest.py` — differential test of every instruction form against Unicorn
@@ -15,10 +19,42 @@ and an MSCDEX CD-ROM drive with CD audio. It's native code on macOS/Linux/Window
   `rt_snd.c` (HMI SOS digital audio: native mixer behind the hooked SOS API), `rt_pad.c` (controllers)
 - `analysis/` — Ghidra project and exports
 
-## Build & run
-    make gen          # regenerate C from SKIPIT.EXE
-    make -j12 OPT=-O2
-    ./quarantine      # run from this directory
+## Setup
+Tested on macOS (Apple Silicon). Linux should work with the same steps but hasn't been tried; Windows is
+untested (MSYS2 with SDL3 and clang is the likely route).
+
+**1. Install the tools**
+
+| | |
+|---|---|
+| macOS | `brew install sdl3 python` and the Xcode command-line tools (`xcode-select --install`) |
+| Debian/Ubuntu | `sudo apt install clang make python3 python3-venv pkg-config` plus SDL3 (`libsdl3-dev` on recent releases, otherwise build SDL3 from source) |
+
+The translator needs the `capstone` disassembler for Python:
+
+    python3 -m venv .venv && .venv/bin/pip install capstone
+
+**2. Image your CD.** Any rip that keeps the audio tracks works; the music is CD audio.
+`tools/extract.py` reads a cue sheet with its `.bin` file(s) (e.g. from ImgBurn, cdrdao or
+`bchunk`-style rips) or a Nero `.nrg` image. A plain `.iso` is not enough: it has no music.
+
+**3. Extract the image** into `extracted/` (game files in `extracted/cd/`, music in `extracted/trackNN.wav`):
+
+    python3 tools/extract.py /path/to/Quarantine.cue      # or .nrg
+
+**4. Translate and build**
+
+    make gen PYTHON=.venv/bin/python     # translate SKIPIT.EXE into C (gen/), ~5 s
+    make -j8 OPT=-O2                     # build ./quarantine
+
+If SDL3 isn't found, point the build at it: `make SDL_PREFIX=/path/to/sdl3`. To use gcc: `make CC=gcc`.
+
+**5. Play**
+
+    ./quarantine                         # run from the repository directory
+
+The manual-lookup copy protection is skipped (`QUAR_COPYPROT=1` brings it back). Saved games and any file
+the game modifies go to `save/`; `extracted/` is never written to.
 
 Environment knobs: `QUAR_DATA` (game files, default `extracted/cd`), `QUAR_SAVE` (writable dir, default `save`),
 `QUAR_CDAUDIO` (default `extracted`), `QUAR_HEADLESS=1`, `QUAR_DUMP=<dir>` (frame dumps),

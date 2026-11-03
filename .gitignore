@@ -17,6 +17,7 @@ analysis/skipit_decomp.c
 
 # Local tooling / logs
 tools/.venv/
+.venv/
 __pycache__/
 *.log
 .DS_Store

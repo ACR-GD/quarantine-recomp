@@ -298,6 +298,13 @@ static int host_path(const char *dos, char *out, size_t n, int for_write) {
     snprintf(out, n, "%s/%s", save_dir, low);
     return 0;
 }
+static int copy_file(const char *src, const char *dst) {
+    int in = open(src, O_RDONLY); if (in < 0) return -1;
+    int out = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { close(in); return -1; }
+    char buf[65536]; ssize_t r; int rc = 0;
+    while ((r = read(in, buf, sizeof buf)) > 0) if (write(out, buf, r) != r) { rc = -1; break; }
+    close(in); close(out); return rc;
+}
 static void read_cstr(uint32_t a, char *out, int n) { int k = 0; for (; k < n - 1; k++) { out[k] = RD8(a + k); if (!out[k]) break; } out[k] = 0; }
 static int new_handle(int fd) { for (int h = 5; h < 64; h++) if (dos_fd[h] < 0) { dos_fd[h] = fd; return h; } return -1; }
 
@@ -375,11 +382,15 @@ static void dos_int21(void) {
         int found = host_path(name, hp, sizeof hp, 0);
         int mode = AL & 3;
         int fd = -1;
+        if (found && mode && strncmp(hp, save_dir, strlen(save_dir)) != 0) {
+            // Opened for writing but it only exists in the game-data directory: copy it to the save
+            // directory first so the game's files are never modified (copy-on-write).
+            char dst[2048]; host_path(name, dst, sizeof dst, 1);
+            if (copy_file(hp, dst) == 0) { LOG("copy-on-write %s -> %s\n", hp, dst); snprintf(hp, sizeof hp, "%s", dst); }
+        }
         if (found) {
             fd = open(hp, mode == 0 ? O_RDONLY : O_RDWR);
-            if (fd < 0 && mode) {   // file lives in read-only data dir: copy to save dir on write-open
-                fd = open(hp, O_RDONLY);
-            }
+            if (fd < 0 && mode) fd = open(hp, O_RDONLY);
         }
         LOG("open %s (mode %d) -> %s fd %d\n", name, mode, found ? hp : "(not found)", fd);
         if (fd < 0) { err(2); return; }
