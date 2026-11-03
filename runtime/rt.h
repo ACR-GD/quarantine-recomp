@@ -261,6 +261,7 @@ void rt_fn_enter(uint32_t a);
 #endif
 int snd_hle(uint32_t fn);
 void rt_idle(void);
+void pad_game_frame(void);
 void snd_service(void);
 extern int rt_skip_copyprot;   // skip the manual-lookup screen (default on; QUAR_COPYPROT=1 keeps it)
 extern volatile int irq_pending;

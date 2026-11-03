@@ -35,3 +35,5 @@ void snd_init(void);
 void snd_start(int headless);
 void snd_shutdown(void);
 void cd_stats(void);
+void pad_init(void);
+void pad_poll(void);

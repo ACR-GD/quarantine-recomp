@@ -90,6 +90,7 @@ static double pit_rate(void) { return 1193182.0 / (pit_divisor ? pit_divisor : 6
 #define KBQ 64
 static uint8_t kbq[KBQ]; static int kbq_r, kbq_w; static uint8_t kb_last;
 static void kb_push(uint8_t sc) { if (((kbq_w + 1) & (KBQ - 1)) != kbq_r) { kbq[kbq_w] = sc; kbq_w = (kbq_w + 1) & (KBQ - 1); } }
+void sys_key(uint8_t sc, int down) { kb_push(down ? sc : sc | 0x80); }   // used by rt_pad.c
 
 static uint32_t timer_ticks_owed;   // guest timer interrupts not yet delivered
 static double bios_tick_acc;
@@ -114,6 +115,7 @@ static int vga_mode = 3;
 static double retrace_t0;
 static uint64_t flip_count;
 static int no_vsync;
+static int pad_on;
 static uint32_t watch_addr;
 // The game never waits for retrace: it flips pages as fast as it can draw (thousands per second on a
 // modern CPU). A real VGA shows at most one new page per 70 Hz refresh, so pace page flips (writes of
@@ -670,6 +672,7 @@ static struct { double t; uint8_t sc; } keyscript[256]; static int nkeys, keypos
 
 static void present(void) {
     vga_render();
+    if (pad_on) pad_poll();
     frame_count++;
     if (verbose && frame_count % 70 == 0) {
         int pal = 0, nz = 0; for (int i = 0; i < 256; i++) pal += dac[i][0] + dac[i][1] + dac[i][2];
@@ -816,5 +819,6 @@ void sys_init(int argc, char **argv) {
     }
     snd_init();
     snd_start(headless);
+    if (!headless || getenv("QUAR_PADTEST")) { pad_init(); pad_on = 1; }
     pthread_t th; pthread_create(&th, 0, timer_thread, 0);
 }

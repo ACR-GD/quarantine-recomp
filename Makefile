@@ -7,7 +7,7 @@ CFLAGS  = $(OPT) -g -std=c11 -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -DUSE_SDL -Wno
 LDLIBS  = -L/opt/homebrew/opt/sdl3/lib -lSDL3 -lm -lpthread
 
 GEN_SRC = $(wildcard gen/*.c)
-RT_SRC  = runtime/rt_core.c runtime/rt_sys.c runtime/rt_cd.c runtime/rt_snd.c runtime/main.c
+RT_SRC  = runtime/rt_core.c runtime/rt_sys.c runtime/rt_cd.c runtime/rt_snd.c runtime/rt_pad.c runtime/main.c
 OBJ     = $(patsubst %.c,build/%.o,$(GEN_SRC) $(RT_SRC))
 
 quarantine: $(OBJ)

@@ -230,6 +230,10 @@ IDLE = {0x110784, 0x1133c9,           # wait for a key (kbhit loop)
         0x14b289,                     # wait for the streamed voice to finish
         0x14b5fa, 0x14b6a0, 0x14b75b} # FLI players: wait for the next frame's tick
 
+# In-game (driving) key handler, called once per game frame: tells the controller code that buttons
+# should map to driving controls rather than menu keys.
+HOOKS[0x12cb64] = 'pad_game_frame();'
+
 # HMI SOS API entry points, emulated in runtime/rt_snd.c (value = bytes the callee pops).
 for _a, _n in {0x155194: 0, 0x15532d: 8, 0x155b9c: 0, 0x1552c2: 0, 0x1561d5: 0, 0x15623d: 0,
                0x15626b: 0x10, 0x156acf: 0, 0x156fb8: 0, 0x1575d1: 0, 0x157637: 0, 0x157e7d: 0,

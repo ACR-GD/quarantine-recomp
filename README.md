@@ -12,7 +12,7 @@ and an MSCDEX CD-ROM drive with CD audio. It's native code on macOS/Linux/Window
   (`tools/.venv/bin/python -I tools/difftest.py extracted/cd/SKIPIT.EXE`)
 - `runtime/` — `rt.h` (CPU state, lazy flags, ALU), `rt_core.c` (dispatch, interrupts, string ops, x87),
   `rt_sys.c` (DOS/DPMI/BIOS, VGA, ports, SDL frontend), `rt_cd.c` (MSCDEX + CD audio),
-  `rt_snd.c` (HMI SOS digital audio: native mixer behind the hooked SOS API)
+  `rt_snd.c` (HMI SOS digital audio: native mixer behind the hooked SOS API), `rt_pad.c` (controllers)
 - `analysis/` — Ghidra project and exports
 
 ## Build & run
@@ -27,6 +27,27 @@ Environment knobs: `QUAR_DATA` (game files, default `extracted/cd`), `QUAR_SAVE`
 `QUAR_NOSOUND=1` (mute sound effects), `QUAR_SNDDUMP=file.wav` (headless: write the effects mix to a WAV),
 `QUAR_NOVSYNC=1` (don't pace page flips to 70 Hz), `QUAR_WATCH=hexaddr` (log a guest dword twice a second).
 Debug build with call tracing and stack checks: `make OPT="-O1 -DRT_DEBUG"`.
+
+## Controls
+Keyboard as in the original. Any SDL3-supported controller (Xbox, PlayStation, Switch Pro, 8BitDo, ...) also
+works and can be plugged in at any time:
+
+| Input | Menus | Driving |
+|---|---|---|
+| Left stick / D-pad | arrows | steer, accelerate, brake |
+| RT / LT | – | accelerate / brake-reverse |
+| A | Enter | fire (Ctrl) |
+| B | Esc | nitro (Tab) |
+| X | – | cycle weapon (Alt) |
+| Y | Space | special item (Space) |
+| LB / RB | – | E / Z |
+| Start | Enter | game menu (Esc) |
+| Back / Select | Esc | map (M) |
+| L3 / R3 | – | horn (Enter) / cycle camera (F1–F3) |
+
+The driving column applies while the game's in-game key handler is running (hooked at 0x12cb64). Each button
+releases the key it pressed, even if the context changed meanwhile. `QUAR_PADTEST="ms:input:value,..."` drives
+a virtual pad for testing (see `runtime/rt_pad.c`).
 
 ## Translation model notes
 - Objects are loaded 0x100000 above their preferred bases (the data object would otherwise overlap VGA RAM).
