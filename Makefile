@@ -19,13 +19,13 @@ CFLAGS  = $(OPT) -g -std=c11 -D_DEFAULT_SOURCE -D_GNU_SOURCE -D_DARWIN_C_SOURCE 
 LDLIBS  = $(SDL_LIBS) -lm -lpthread
 
 GEN_SRC = $(wildcard gen/*.c)
-RT_SRC  = runtime/rt_core.c runtime/rt_sys.c runtime/rt_cd.c runtime/rt_snd.c runtime/rt_pad.c runtime/main.c
+RT_SRC  = runtime/rt_core.c runtime/rt_sys.c runtime/rt_cd.c runtime/rt_snd.c runtime/rt_pad.c runtime/rt_disc.c runtime/rt_config.c runtime/rt_launcher.c runtime/main.c
 OBJ     = $(patsubst %.c,build/%.o,$(GEN_SRC) $(RT_SRC))
 
 quarantine: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(LDLIBS)
 
-build/%.o: %.c runtime/rt.h runtime/sys.h
+build/%.o: %.c runtime/rt.h runtime/sys.h runtime/disc.h gen/image_info.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

@@ -44,6 +44,16 @@ typedef struct {
 static voice_t vc[NVOICES];
 static pthread_mutex_t mx = PTHREAD_MUTEX_INITIALIZER;
 static int have_dev, muted;
+static float sfx_gain = 1.0f;
+#ifdef USE_SDL
+static SDL_AudioStream *sfx_stream;
+#endif
+void snd_set_volume(int pct) {
+    sfx_gain = pct / 100.0f;
+#ifdef USE_SDL
+    if (sfx_stream) SDL_SetAudioStreamGain(sfx_stream, sfx_gain);
+#endif
+}
 static uint32_t serial;
 static double hl_t0;
 static FILE *dump;            // QUAR_SNDDUMP=file.wav (headless only): raw mixer output
@@ -148,7 +158,7 @@ void snd_start(int headless) {
     if (!headless && SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         SDL_AudioSpec spec = {SDL_AUDIO_S16LE, 1, OUT_RATE};
         SDL_AudioStream *st = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, audio_cb, 0);
-        if (st) { SDL_ResumeAudioStreamDevice(st); have_dev = 1; }
+        if (st) { sfx_stream = st; SDL_SetAudioStreamGain(st, sfx_gain); SDL_ResumeAudioStreamDevice(st); have_dev = 1; }
         else fprintf(stderr, "sound: %s\n", SDL_GetError());
     }
 #endif

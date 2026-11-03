@@ -76,6 +76,7 @@ static double next_scan;
 
 // virtual pad for scripted tests
 static SDL_Joystick *vjoy;
+static SDL_JoystickID vjoy_id;    // test mode: use the virtual pad, not a real one
 static struct { double t; char in[8]; float v; } script[256];
 static int nscript, spos;
 static double t0;
@@ -101,6 +102,7 @@ void pad_init(void) {
         d.name = "Quarantine test pad";
         SDL_JoystickID id = SDL_AttachVirtualJoystick(&d);
         vjoy = id ? SDL_OpenJoystick(id) : 0;
+        vjoy_id = id;
         if (!vjoy) fprintf(stderr, "virtual pad: %s\n", SDL_GetError());
         char *s = strdup(ps), *tok;
         for (tok = strtok(s, ","); tok && nscript < 256; tok = strtok(0, ",")) {
@@ -141,7 +143,7 @@ void pad_poll(void) {
         next_scan = t + 1.0;
         int n = 0; SDL_JoystickID *ids = SDL_GetGamepads(&n);
         if (ids && n > 0) {
-            pad = SDL_OpenGamepad(ids[0]);
+            pad = SDL_OpenGamepad(vjoy_id ? vjoy_id : ids[0]);
             if (pad) fprintf(stderr, "[controller: %s]\n", SDL_GetGamepadName(pad));
         }
         SDL_free(ids);

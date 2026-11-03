@@ -27,7 +27,6 @@ int sys_irq_waiting(void);
 int sys_next_irq(void);
 uint32_t sys_pm_vector(int vec);
 uint32_t sel_base(uint16_t sel);
-void cd_init(const char *audio_dir);
 void cd_audio_start(int headless);
 int cd_int2f(uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx, uint16_t es);
 void rt_deliver_int(uint32_t handler);

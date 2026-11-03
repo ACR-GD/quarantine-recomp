@@ -4,23 +4,23 @@
 #include "../gen/image_info.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-static void load_image(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) rt_fatal("cannot open %s", path);
-    uint32_t hdr[2];
-    while (fread(hdr, 4, 2, f) == 2) {
-        if (fread(MEM + hdr[0], 1, hdr[1], f) != hdr[1]) rt_fatal("short image");
+// The relocated objects of SKIPIT.EXE, embedded by tools/recomp.py (gen/image_data.c).
+extern const uint8_t GUEST_IMAGE[];
+extern const uint32_t GUEST_IMAGE_SIZE;
+static void load_image(void) {
+    for (uint32_t p = 0; p + 8 <= GUEST_IMAGE_SIZE;) {
+        uint32_t base, size;
+        memcpy(&base, GUEST_IMAGE + p, 4); memcpy(&size, GUEST_IMAGE + p + 4, 4); p += 8;
+        memcpy(MEM + base, GUEST_IMAGE + p, size); p += size;
     }
-    fclose(f);
 }
 
 int main(int argc, char **argv) {
     extern int rt_verbose; rt_verbose = getenv("QUAR_VERBOSE") != 0;
-    rt_skip_copyprot = !(getenv("QUAR_COPYPROT") && atoi(getenv("QUAR_COPYPROT")));
     MEM = calloc(1, MEM_SIZE + 16);
-    const char *img = getenv("QUAR_IMAGE") ? getenv("QUAR_IMAGE") : "gen/image.bin";
-    load_image(img);
+    load_image();
     sys_init(argc, argv);
     ESP = GUEST_ESP;
     PUSH32(MAGIC_FARRET);

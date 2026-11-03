@@ -2,6 +2,7 @@
 // and the SDL3 host frontend.
 #include "rt.h"
 #include "sys.h"
+#include "disc.h"
 #include "../gen/image_info.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -719,6 +720,10 @@ static void present(void) {
             if (e.type == SDL_EVENT_QUIT) { sys_shutdown(); exit(0); }
             if (e.type == SDL_EVENT_KEY_DOWN || e.type == SDL_EVENT_KEY_UP) {
                 if (e.key.repeat) continue;
+                if (e.key.scancode == SDL_SCANCODE_F11) {     // F11: toggle fullscreen (not passed to the game)
+                    if (e.type == SDL_EVENT_KEY_DOWN) { cfg.fullscreen ^= 1; SDL_SetWindowFullscreen(win, cfg.fullscreen); cfg_save(); }
+                    continue;
+                }
                 uint8_t sc = sdl_to_set1(e.key.scancode);
                 int ext = e.key.scancode == SDL_SCANCODE_UP || e.key.scancode == SDL_SCANCODE_DOWN ||
                           e.key.scancode == SDL_SCANCODE_LEFT || e.key.scancode == SDL_SCANCODE_RIGHT ||
@@ -726,6 +731,10 @@ static void present(void) {
                 if (sc) { if (ext) kb_push(0xe0); kb_push(sc | (e.type == SDL_EVENT_KEY_UP ? 0x80 : 0)); }
             }
         }
+        static int lh = -1, lsm = -1;
+        int h = cfg.square ? scr_h * 4 : 960;             // 4:3 like a CRT, or square pixels
+        if (h != lh) { SDL_SetRenderLogicalPresentation(ren, 1280, h, SDL_LOGICAL_PRESENTATION_LETTERBOX); lh = h; }
+        if (cfg.smooth != lsm) { SDL_SetTextureScaleMode(tex, cfg.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST); lsm = cfg.smooth; }
         SDL_UpdateTexture(tex, NULL, framebuf, 320 * 4);
         SDL_FRect src = {0, 0, 320, (float)scr_h};
         SDL_RenderClear(ren);
@@ -769,13 +778,9 @@ void sys_init(int argc, char **argv) {
     (void)argc; (void)argv;
     verbose = getenv("QUAR_VERBOSE") != 0;
     headless = getenv("QUAR_HEADLESS") != 0;
-    no_vsync = getenv("QUAR_NOVSYNC") != 0;
     if (getenv("QUAR_WATCH")) watch_addr = (uint32_t)strtoul(getenv("QUAR_WATCH"), 0, 16);
     dump_dir = getenv("QUAR_DUMP");
     if (getenv("QUAR_MAXFRAMES")) max_frames = atoi(getenv("QUAR_MAXFRAMES"));
-    if (getenv("QUAR_DATA")) snprintf(data_dir, sizeof data_dir, "%s", getenv("QUAR_DATA"));
-    if (getenv("QUAR_SAVE")) snprintf(save_dir, sizeof save_dir, "%s", getenv("QUAR_SAVE"));
-    mkdir(save_dir, 0755);
     if (getenv("QUAR_KEYS")) {
         char *s = strdup(getenv("QUAR_KEYS")), *tok;
         for (tok = strtok(s, ","); tok && nkeys < 256; tok = strtok(0, ",")) {
@@ -810,18 +815,70 @@ void sys_init(int argc, char **argv) {
     vga_set_mode(3);
     retrace_t0 = t_start = last_present = last_tick_t = now_s();
 
+    // ---- configuration (config.ini in the per-user folder; environment variables override it)
+    cfg_load();
+    if (getenv("QUAR_COPYPROT")) cfg.copyprot = atoi(getenv("QUAR_COPYPROT")) != 0;
+    if (getenv("QUAR_NOVSYNC")) cfg.framecap = 0;
+    int want_launcher = 0;
+    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--launcher") || !strcmp(argv[i], "--config")) want_launcher = 1;
+
 #ifdef USE_SDL
     if (!headless) {
-        if (!SDL_Init(SDL_INIT_VIDEO)) rt_fatal("SDL_Init: %s", SDL_GetError());
-        win = SDL_CreateWindow("Quarantine (recompiled)", 1280, 960, SDL_WINDOW_RESIZABLE);
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) rt_fatal("SDL_Init: %s", SDL_GetError());
+        win = SDL_CreateWindow("Quarantine", 1280, 960, SDL_WINDOW_RESIZABLE | (cfg.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
         ren = SDL_CreateRenderer(win, NULL);
-        SDL_SetRenderLogicalPresentation(ren, 1280, 960, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_SetRenderVSync(ren, 1);
         tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 240);
-        SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+        SDL_PumpEvents();
+        const bool *ks = SDL_GetKeyboardState(NULL);
+        if (ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT]) want_launcher = 1;   // hold Shift to get the launcher
     }
 #endif
-    cd_init(getenv("QUAR_CDAUDIO") ? getenv("QUAR_CDAUDIO") : "extracted");
+
+    // ---- game source: disc image (installed to <config>/data) or an extracted folder
+    char err[512] = "";
+    if (getenv("QUAR_DATA")) {                       // development override: use these files as they are
+        snprintf(data_dir, sizeof data_dir, "%s", getenv("QUAR_DATA"));
+        disc_open(getenv("QUAR_CDAUDIO") ? getenv("QUAR_CDAUDIO") : "extracted", err, sizeof err);   // music only
+    } else {
+        if (!cfg.disc[0] && access("extracted/cd/SKIPIT.EXE", R_OK) == 0) {   // repository checkout with extract.py output
+            char abs[1024]; if (realpath("extracted", abs)) snprintf(cfg.disc, sizeof cfg.disc, "%s", abs);
+        }
+        int ok = disc_open(cfg.disc, err, sizeof err) == 0;
+#ifdef USE_SDL
+        if (!headless && (cfg.launcher || !ok || want_launcher)) {
+            if (!launcher_run(win, ren, err)) { sys_shutdown(); exit(0); }
+            ok = 1;
+        }
+#endif
+        if (!ok) rt_fatal("%s\n(start the game without QUAR_HEADLESS to choose a disc image)", err[0] ? err : "no disc image configured");
+        char dest[1100]; snprintf(dest, sizeof dest, "%sdata", cfg_dir());
+        if (disc_kind() == SRC_IMAGE) {
+            if (disc_install(dest, 0, 0, err, sizeof err)) rt_fatal("installing the game files: %s", err);
+            snprintf(data_dir, sizeof data_dir, "%s", dest);
+        } else snprintf(data_dir, sizeof data_dir, "%s", disc_data_dir());
+    }
+    if (getenv("QUAR_SAVE")) snprintf(save_dir, sizeof save_dir, "%s", getenv("QUAR_SAVE"));
+    else snprintf(save_dir, sizeof save_dir, "%ssave", cfg_dir());
+    mkdir(save_dir, 0755);
+    no_vsync = !cfg.framecap;
+    rt_skip_copyprot = !cfg.copyprot;
+    LOG("data %s, saves %s, config %s\n", data_dir, save_dir, cfg_dir());
+
+#ifdef USE_SDL
+    if (!headless) {
+        SDL_SetRenderScale(ren, 1, 1);
+        SDL_SetTextureScaleMode(tex, cfg.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+    }
+#endif
+    {
+        static cd_track_src tracks[98];
+        int n = disc_audio_tracks(tracks, 98);
+        cd_init_tracks(tracks, n, disc_data_sectors());
+        if (!n) LOG("no CD music available: tracks will be silent\n");
+    }
     cd_audio_start(headless);
+    cd_set_volume(cfg.music);
     // The CD ships SOUND.DAT = 0 (no card); SETUP.EXE would write a device id. Any non-zero id selects
     // the emulated SOS driver (rt_snd.c). A SOUND.DAT already in the save directory wins.
     {
@@ -830,6 +887,7 @@ void sys_init(int argc, char **argv) {
     }
     snd_init();
     snd_start(headless);
+    snd_set_volume(cfg.sfx);
     if (!headless || getenv("QUAR_PADTEST")) { pad_init(); pad_on = 1; }
     pthread_t th; pthread_create(&th, 0, timer_thread, 0);
 }

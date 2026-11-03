@@ -9,14 +9,15 @@ game's executable is translated on your machine during setup.
 
 ## Layout
 - `extracted/` — your CD's files (`cd/`) and audio tracks (`track02–12.wav`), made by `tools/extract.py`
-- `tools/extract.py` — CD image extractor (.cue/.bin or .nrg; ISO 9660 + CD audio to WAV)
+- `tools/extract.py` — CD image extractor (.cue/.bin or .nrg; ISO 9660 + CD audio to WAV; `--exe-only` for the build)
 - `tools/le.py` — LE loader (objects, fixups, rebasing)
 - `tools/recomp.py` — the recompiler: function discovery + x86 → C emitter, writes `gen/`
 - `tools/difftest.py` — differential test of every instruction form against Unicorn
   (`tools/.venv/bin/python -I tools/difftest.py extracted/cd/SKIPIT.EXE`)
 - `runtime/` — `rt.h` (CPU state, lazy flags, ALU), `rt_core.c` (dispatch, interrupts, string ops, x87),
   `rt_sys.c` (DOS/DPMI/BIOS, VGA, ports, SDL frontend), `rt_cd.c` (MSCDEX + CD audio),
-  `rt_snd.c` (HMI SOS digital audio: native mixer behind the hooked SOS API), `rt_pad.c` (controllers)
+  `rt_snd.c` (HMI SOS digital audio: native mixer behind the hooked SOS API), `rt_pad.c` (controllers),
+  `rt_disc.c` (reads .cue/.bin, .nrg, .iso images directly), `rt_config.c` (config.ini), `rt_launcher.c` (launcher)
 - `analysis/` — Ghidra project and exports
 
 ## Setup
@@ -34,30 +35,40 @@ The translator needs the `capstone` disassembler for Python:
 
     python3 -m venv .venv && .venv/bin/pip install capstone
 
-**2. Image your CD.** Any rip that keeps the audio tracks works; the music is CD audio.
-`tools/extract.py` reads a cue sheet with its `.bin` file(s) (e.g. from ImgBurn, cdrdao or
-`bchunk`-style rips) or a Nero `.nrg` image. A plain `.iso` is not enough: it has no music.
+**2. Image your CD.** Any rip that keeps the audio tracks works; the music is CD audio. Supported: a cue
+sheet with its `.bin` file(s) (ImgBurn, cdrdao, ...), a Nero `.nrg`, or an `.iso` (data only: no music).
 
-**3. Extract the image** into `extracted/` (game files in `extracted/cd/`, music in `extracted/trackNN.wav`):
+**3. Translate and build.** The build needs only the game's executable from the disc:
 
-    python3 tools/extract.py /path/to/Quarantine.cue      # or .nrg
-
-**4. Translate and build**
-
+    python3 tools/extract.py --exe-only /path/to/Quarantine.cue   # writes extracted/cd/SKIPIT.EXE
     make gen PYTHON=.venv/bin/python     # translate SKIPIT.EXE into C (gen/), ~5 s
     make -j8 OPT=-O2                     # build ./quarantine
 
 If SDL3 isn't found, point the build at it: `make SDL_PREFIX=/path/to/sdl3`. To use gcc: `make CC=gcc`.
+The `quarantine` binary is self-contained and can be moved anywhere.
 
-**5. Play**
+**4. Play**
 
-    ./quarantine                         # run from the repository directory
+    ./quarantine
 
-The manual-lookup copy protection is skipped (`QUAR_COPYPROT=1` brings it back). Saved games and any file
-the game modifies go to `save/`; `extracted/` is never written to.
+The launcher opens. Choose **Disc image** and pick your `.cue`/`.nrg`/`.iso` (or drop it on the window), then
+**Start game**. The launcher checks that the disc holds the exact `SKIPIT.EXE` the build was made from, copies
+the game's data files (60 MB) into the settings folder on first start, and streams the CD music straight
+from the image. A folder made by a full `python3 tools/extract.py <image>` works too, and a repository
+checkout with `extracted/` uses it automatically.
 
-Environment knobs: `QUAR_DATA` (game files, default `extracted/cd`), `QUAR_SAVE` (writable dir, default `save`),
-`QUAR_CDAUDIO` (default `extracted`), `QUAR_HEADLESS=1`, `QUAR_DUMP=<dir>` (frame dumps),
+**Settings** (in the launcher): window/fullscreen (also F11 in game), sharp/smooth scaling, 4:3 or square
+pixels, music and effects volume, the 70 Hz frame limit, copy protection, and whether the launcher shows at
+startup (if it's off, hold Shift while starting, or run `./quarantine --launcher`).
+
+Settings, the installed data and saved games live in the per-user folder:
+macOS `~/Library/Application Support/quarantine-recomp/Quarantine/`,
+Linux `~/.local/share/quarantine-recomp/Quarantine/`, Windows `%APPDATA%\quarantine-recomp\Quarantine\`
+(`config.ini`, `data/`, `save/`). The disc image is only read, never modified.
+
+Environment knobs (mostly for development; they override the launcher): `QUAR_DATA` (use this folder of game
+files as is), `QUAR_SAVE` (save folder), `QUAR_CDAUDIO` (music folder with `QUAR_DATA`), `QUAR_CONFIG_DIR`
+(settings folder), `QUAR_LAUNCHER_TEST` (scripted launcher input, see `rt_launcher.c`), `QUAR_HEADLESS=1`, `QUAR_DUMP=<dir>` (frame dumps),
 `QUAR_KEYS="ms:scancode,..."` (scripted input), `QUAR_VERBOSE=1`, `QUAR_MAXFRAMES=n`,
 `QUAR_COPYPROT=1` (show the manual-lookup copy-protection screen; skipped by default),
 `QUAR_NOSOUND=1` (mute sound effects), `QUAR_SNDDUMP=file.wav` (headless: write the effects mix to a WAV),

@@ -1,7 +1,9 @@
-// MSCDEX + CD-audio emulation. The audio tracks are the WAV files extracted from the disc image;
-// the TOC is rebuilt from their sizes (track 1 = data, 29428 sectors, 2 s pregap before track 2).
+// MSCDEX + CD-audio emulation. Audio tracks are raw PCM ranges of host files (the disc image itself,
+// or WAVs from tools/extract.py); see rt_disc.c. The TOC is rebuilt from their lengths (track 1 = data,
+// 2 s pregap before track 2). With no music available, silent tracks keep the game's CD logic happy.
 #include "rt.h"
 #include "sys.h"
+#include "disc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,11 +18,15 @@
 extern int rt_verbose;
 
 #define CD_DRIVE 3            // D:
-#define DATA_SECTORS 29428
-#define NTRACKS 12
+#define MAXTRACKS 99
 
-static struct { uint32_t start, len; char path[1024]; } trk[NTRACKS + 1];
+static struct { uint32_t start, len; cd_track_src src; } trk[MAXTRACKS + 1];
+static int NTRACKS = 1;
 static uint32_t leadout;
+static float gain = 1.0f;
+#ifdef USE_SDL
+static SDL_AudioStream *stream_h;
+#endif
 static pthread_mutex_t cd_mx = PTHREAD_MUTEX_INITIALIZER;
 static int playing, paused;
 static uint32_t play_start, play_end, cur_lba;   // LBA (HSG)
@@ -36,16 +42,27 @@ static uint32_t from_redbook(uint32_t rb) { return ((rb >> 16) & 0xff) * 4500 + 
 static uint8_t bcd(int v) { return (uint8_t)(((v / 10) << 4) | (v % 10)); }
 static int track_of(uint32_t lba) { for (int t = NTRACKS; t >= 1; t--) if (lba >= trk[t].start) return t; return 1; }
 
-void cd_init(const char *audio_dir) {
-    trk[1].start = 0; trk[1].len = DATA_SECTORS;
-    uint32_t lba = DATA_SECTORS + 150;
-    for (int t = 2; t <= NTRACKS; t++) {
-        snprintf(trk[t].path, sizeof trk[t].path, "%s/track%02d.wav", audio_dir, t);
-        struct stat st;
-        uint32_t len = stat(trk[t].path, &st) == 0 ? (uint32_t)((st.st_size - 44) / 2352) : 0;
+void cd_init_tracks(const cd_track_src *src, int n, uint32_t data_sectors) {
+    trk[1].start = 0; trk[1].len = data_sectors;
+    uint32_t lba = data_sectors + 150;
+    if (n > MAXTRACKS - 1) n = MAXTRACKS - 1;
+    int silent = n == 0;
+    if (silent) n = 11;                                   // no music: 11 one-minute silent tracks
+    NTRACKS = n + 1;
+    for (int k = 0; k < n; k++) {
+        int t = k + 2;
+        memset(&trk[t].src, 0, sizeof trk[t].src);
+        if (!silent) trk[t].src = src[k];
+        uint32_t len = silent ? 75 * 60 : (uint32_t)(src[k].bytes / 2352);
         trk[t].start = lba; trk[t].len = len; lba += len;
     }
     leadout = lba;
+}
+void cd_set_volume(int pct) {
+    gain = pct / 100.0f;
+#ifdef USE_SDL
+    if (stream_h) SDL_SetAudioStreamGain(stream_h, gain);
+#endif
 }
 
 // position the stream at cur_lba (call with mutex held)
@@ -53,9 +70,9 @@ static void seek_stream(void) {
     if (cur_fd >= 0) { close(cur_fd); cur_fd = -1; }
     cur_trk = track_of(cur_lba);
     if (cur_trk < 2) return;
-    cur_fd = open(trk[cur_trk].path, O_RDONLY);
     cur_byte = (uint64_t)(cur_lba - trk[cur_trk].start) * 2352;
-    if (cur_fd >= 0) lseek(cur_fd, 44 + cur_byte, SEEK_SET);
+    cur_fd = trk[cur_trk].src.path[0] ? open(trk[cur_trk].src.path, O_RDONLY) : -2;   // -2: silent track
+    if (cur_fd >= 0) lseek(cur_fd, (off_t)(trk[cur_trk].src.offset + cur_byte), SEEK_SET);
 }
 
 // fill PCM (called from the audio thread)
@@ -64,13 +81,27 @@ static int cd_read_pcm(uint8_t *buf, int n) {
     int got = 0;
     while (playing && !paused && got < n) {
         if (cur_lba >= play_end) { playing = 0; break; }
-        if (cur_fd < 0) seek_stream();
-        if (cur_fd < 0) { playing = 0; break; }
+        if (cur_fd == -1) seek_stream();
+        if (cur_fd == -1) { playing = 0; break; }
         uint32_t want = n - got;
         uint64_t remain = (uint64_t)(play_end - cur_lba) * 2352 - (cur_byte % 2352);
+        uint64_t trk_left = (uint64_t)trk[cur_trk].len * 2352 - cur_byte;    // never read into the next track
         if (want > remain) want = (uint32_t)remain;
-        ssize_t r = read(cur_fd, buf + got, want);
-        if (r <= 0) { cur_lba = trk[cur_trk].start + trk[cur_trk].len; cur_byte = 0; close(cur_fd); cur_fd = -1; continue; }
+        if (want > trk_left) want = (uint32_t)trk_left;
+        ssize_t r;
+        if (cur_fd == -2) { memset(buf + got, 0, want); r = want; }
+        else {
+            r = want ? read(cur_fd, buf + got, want) : 0;
+            if (r > 0 && trk[cur_trk].src.swap)
+                for (ssize_t i = 0; i + 1 < r; i += 2) { uint8_t t = buf[got + i]; buf[got + i] = buf[got + i + 1]; buf[got + i + 1] = t; }
+        }
+        if (r <= 0) {                                    // end of track: continue with the next one
+            cur_lba = trk[cur_trk].start + trk[cur_trk].len; cur_byte = 0;
+            if (cur_fd >= 0) close(cur_fd);
+            cur_fd = -1;
+            if (cur_trk + 1 <= NTRACKS && cur_lba < trk[cur_trk + 1].start) cur_lba = trk[cur_trk + 1].start;   // skip pregap
+            continue;
+        }
         got += (int)r; cur_byte += r;
         cur_lba = trk[cur_trk].start + (uint32_t)(cur_byte / 2352);
     }
@@ -98,7 +129,7 @@ void cd_audio_start(int headless) {
     if (!headless && SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         SDL_AudioSpec spec = {SDL_AUDIO_S16LE, 2, 44100};
         SDL_AudioStream *st = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, audio_cb, 0);
-        if (st) { SDL_ResumeAudioStreamDevice(st); have_audio = 1; }
+        if (st) { stream_h = st; SDL_SetAudioStreamGain(st, gain); SDL_ResumeAudioStreamDevice(st); have_audio = 1; }
     }
 #endif
     (void)headless;

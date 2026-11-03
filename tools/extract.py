@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Extract the Quarantine CD image into the layout the runtime expects.
 
-    python3 tools/extract.py <image> [outdir]        (outdir defaults to "extracted")
+    python3 tools/extract.py [--exe-only] <image> [outdir]     (outdir defaults to "extracted")
+
+--exe-only writes just outdir/cd/SKIPIT.EXE, which is all the build needs; the game itself reads the
+disc image directly (choose it in the launcher).
 
 <image> is either a Nero image (.nrg) or a cue sheet (.cue, with its .bin file(s)).
 Produces:
@@ -12,6 +15,8 @@ Produces:
 Only the standard library is used.
 """
 import array, os, re, struct, sys, wave
+
+EXE_ONLY = False
 
 
 # ---------------------------------------------------------------- ISO 9660
@@ -40,6 +45,8 @@ def extract_iso(iso_path, out):
                 continue
             name = name.decode('ascii', 'replace').split(';')[0].rstrip('.')
             p = os.path.join(path, name)
+            if EXE_ONLY and not (flags & 2) and name.upper() != 'SKIPIT.EXE':
+                continue
             if flags & 2:
                 walk(ext, size, p)
             else:
@@ -62,6 +69,8 @@ def roughness(pcm, swap):
 
 
 def copy_audio(f, start, nbytes, wav_path, swap):
+    if EXE_ONLY:
+        return
     w = wave.open(wav_path, 'wb')
     w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
     f.seek(start)
@@ -131,13 +140,16 @@ def extract_nrg(src, out):
                 while n:
                     c = f.read(min(n, 1 << 24)); o.write(c); n -= len(c)
             extract_iso(iso, out)
+            if EXE_ONLY:
+                os.remove(iso)
         elif ssz == 2352:
             # audio; some Nero versions store it big-endian, so pick the byte order that sounds smooth
             f.seek(i1 + n // 2)
             probe = f.read(2352 * 50)
             swap = roughness(probe, True) < roughness(probe, False)
             copy_audio(f, i1, n, os.path.join(out, 'track%02d.wav' % t), swap)
-            print('track %02d: audio, %d sectors%s' % (t, n // ssz, ' (byte-swapped)' if swap else ''))
+            if not EXE_ONLY:
+                print('track %02d: audio, %d sectors%s' % (t, n // ssz, ' (byte-swapped)' if swap else ''))
         else:
             sys.exit('track %d: unsupported sector size %d / mode %08x' % (t, ssz, mode))
     f.close()
@@ -182,20 +194,28 @@ def extract_cue(cue, out):
         f = open(t['file'], 'rb')
         if t['type'] == 'AUDIO':
             copy_audio(f, start * ssz, (end - start) * ssz, os.path.join(out, 'track%02d.wav' % t['n']), False)
-            print('track %02d: audio, %d sectors' % (t['n'], end - start))
+            if not EXE_ONLY:
+                print('track %02d: audio, %d sectors' % (t['n'], end - start))
         else:
             iso = os.path.join(out, 'track%02d.iso' % t['n'])
             data_off = {2048: 0, 2352: 16 if t['type'] == 'MODE1/2352' else 24}[ssz]
             copy_data(f, start * ssz, end - start, ssz, data_off, iso)
             extract_iso(iso, out)
+            if EXE_ONLY:
+                os.remove(iso)
         f.close()
 
 
 def main():
-    if len(sys.argv) not in (2, 3):
+    global EXE_ONLY
+    args = sys.argv[1:]
+    if args and args[0] == '--exe-only':
+        EXE_ONLY = True
+        args = args[1:]
+    if len(args) not in (1, 2):
         sys.exit(__doc__)
-    src = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) == 3 else 'extracted'
+    src = args[0]
+    out = args[1] if len(args) == 2 else 'extracted'
     ext = os.path.splitext(src)[1].lower()
     if ext == '.cue':
         extract_cue(src, out)
