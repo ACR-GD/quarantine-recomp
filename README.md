@@ -57,9 +57,13 @@ the game's data files (60 MB) into the settings folder on first start, and strea
 from the image. A folder made by a full `python3 tools/extract.py <image>` works too, and a repository
 checkout with `extracted/` uses it automatically.
 
-**Settings** (in the launcher): window/fullscreen (also F11 in game), sharp/smooth scaling, 4:3 or square
+**Settings** (in the launcher): window/fullscreen (also F11 in game), output filter (also F10 in game), 4:3 or square
 pixels, music and effects volume, the 70 Hz frame limit, copy protection, and whether the launcher shows at
 startup (if it's off, hold Shift while starting, or run `./quarantine --launcher`).
+
+Output filters: **Sharp** (nearest neighbour), **Smooth** (bilinear), **Crisp** (integer upscale, then
+bilinear for the remainder: square pixels of equal size at any window size), **CRT** (scanlines, beam
+bloom, aperture-grille mask; best in fullscreen or a large window), **Scale4x** (AdvMAME edge smoothing).
 
 Settings, the installed data and saved games live in the per-user folder:
 macOS `~/Library/Application Support/quarantine-recomp/Quarantine/`,
@@ -69,7 +73,7 @@ Linux `~/.local/share/quarantine-recomp/Quarantine/`, Windows `%APPDATA%\quarant
 Environment knobs (mostly for development; they override the launcher): `QUAR_DATA` (use this folder of game
 files as is), `QUAR_SAVE` (save folder), `QUAR_CDAUDIO` (music folder with `QUAR_DATA`), `QUAR_CONFIG_DIR`
 (settings folder), `QUAR_LAUNCHER_TEST` (scripted launcher input, see `rt_launcher.c`), `QUAR_HEADLESS=1`, `QUAR_DUMP=<dir>` (frame dumps),
-`QUAR_KEYS="ms:scancode,..."` (scripted input), `QUAR_VERBOSE=1`, `QUAR_MAXFRAMES=n`,
+`QUAR_KEYS="ms:scancode,..."` (scripted input), `QUAR_SHOT="frame:file.bmp"` (window screenshot), `QUAR_VERBOSE=1`, `QUAR_MAXFRAMES=n`,
 `QUAR_COPYPROT=1` (show the manual-lookup copy-protection screen; skipped by default),
 `QUAR_NOSOUND=1` (mute sound effects), `QUAR_SNDDUMP=file.wav` (headless: write the effects mix to a WAV),
 `QUAR_NOVSYNC=1` (don't pace page flips to 70 Hz), `QUAR_WATCH=hexaddr` (log a guest dword twice a second).

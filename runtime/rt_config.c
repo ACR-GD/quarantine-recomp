@@ -10,7 +10,7 @@
 #include <SDL3/SDL.h>
 #endif
 
-config_t cfg = { .disc = "", .fullscreen = 0, .smooth = 0, .square = 0, .music = 100, .sfx = 100,
+config_t cfg = { .disc = "", .fullscreen = 0, .filter = FILTER_SHARP, .square = 0, .music = 100, .sfx = 100,
                  .framecap = 1, .copyprot = 0, .launcher = 1 };
 
 const char *cfg_dir(void) {
@@ -27,7 +27,7 @@ const char *cfg_dir(void) {
 }
 
 static struct { const char *key; int *val; int lo, hi; } ints[] = {
-    {"fullscreen", &cfg.fullscreen, 0, 1}, {"smooth", &cfg.smooth, 0, 1}, {"square_pixels", &cfg.square, 0, 1},
+    {"fullscreen", &cfg.fullscreen, 0, 1}, {"filter", &cfg.filter, 0, FILTER_COUNT - 1}, {"square_pixels", &cfg.square, 0, 1},
     {"music_volume", &cfg.music, 0, 100}, {"effects_volume", &cfg.sfx, 0, 100}, {"frame_limit", &cfg.framecap, 0, 1},
     {"copy_protection", &cfg.copyprot, 0, 1}, {"show_launcher", &cfg.launcher, 0, 1},
 };
@@ -40,6 +40,7 @@ void cfg_load(void) {
         line[strcspn(line, "\r\n")] = 0;
         char *eq = strchr(line, '='); if (!eq || line[0] == '#') continue;
         *eq = 0; const char *k = line, *v = eq + 1;
+        if (!strcmp(k, "smooth") && atoi(v)) cfg.filter = FILTER_SMOOTH;   // older config files
         if (!strcmp(k, "disc")) snprintf(cfg.disc, sizeof cfg.disc, "%s", v);
         for (size_t i = 0; i < sizeof ints / sizeof ints[0]; i++)
             if (!strcmp(k, ints[i].key)) {

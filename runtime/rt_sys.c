@@ -724,6 +724,10 @@ static void present(void) {
                     if (e.type == SDL_EVENT_KEY_DOWN) { cfg.fullscreen ^= 1; SDL_SetWindowFullscreen(win, cfg.fullscreen); cfg_save(); }
                     continue;
                 }
+                if (e.key.scancode == SDL_SCANCODE_F10) {     // F10: next output filter
+                    if (e.type == SDL_EVENT_KEY_DOWN) { cfg.filter = (cfg.filter + 1) % FILTER_COUNT; cfg_save(); }
+                    continue;
+                }
                 uint8_t sc = sdl_to_set1(e.key.scancode);
                 int ext = e.key.scancode == SDL_SCANCODE_UP || e.key.scancode == SDL_SCANCODE_DOWN ||
                           e.key.scancode == SDL_SCANCODE_LEFT || e.key.scancode == SDL_SCANCODE_RIGHT ||
@@ -731,14 +735,17 @@ static void present(void) {
                 if (sc) { if (ext) kb_push(0xe0); kb_push(sc | (e.type == SDL_EVENT_KEY_UP ? 0x80 : 0)); }
             }
         }
-        static int lh = -1, lsm = -1;
+        static int lh = -1;
         int h = cfg.square ? scr_h * 4 : 960;             // 4:3 like a CRT, or square pixels
         if (h != lh) { SDL_SetRenderLogicalPresentation(ren, 1280, h, SDL_LOGICAL_PRESENTATION_LETTERBOX); lh = h; }
-        if (cfg.smooth != lsm) { SDL_SetTextureScaleMode(tex, cfg.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST); lsm = cfg.smooth; }
-        SDL_UpdateTexture(tex, NULL, framebuf, 320 * 4);
-        SDL_FRect src = {0, 0, 320, (float)scr_h};
         SDL_RenderClear(ren);
-        SDL_RenderTexture(ren, tex, &src, NULL);
+        filter_draw(ren, tex, framebuf, SCR_W, scr_h);
+        static int shot_at = -1; static const char *shot_path;   // QUAR_SHOT="frame:file.bmp": save the window
+        if (shot_at == -1) { const char *e = getenv("QUAR_SHOT"); shot_at = e ? atoi(e) : 0; shot_path = e && strchr(e, ':') ? strchr(e, ':') + 1 : 0; }
+        if (shot_path && frame_count == shot_at) {
+            SDL_Surface *sf = SDL_RenderReadPixels(ren, NULL);
+            if (sf) { SDL_SaveBMP(sf, shot_path); SDL_DestroySurface(sf); }
+        }
         SDL_RenderPresent(ren);
     }
 #endif
@@ -825,7 +832,7 @@ void sys_init(int argc, char **argv) {
 #ifdef USE_SDL
     if (!headless) {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) rt_fatal("SDL_Init: %s", SDL_GetError());
-        win = SDL_CreateWindow("Quarantine", 1280, 960, SDL_WINDOW_RESIZABLE | (cfg.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
+        win = SDL_CreateWindow("Quarantine", 1280, 960, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (cfg.fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
         ren = SDL_CreateRenderer(win, NULL);
         SDL_SetRenderVSync(ren, 1);
         tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 240);
@@ -868,7 +875,6 @@ void sys_init(int argc, char **argv) {
 #ifdef USE_SDL
     if (!headless) {
         SDL_SetRenderScale(ren, 1, 1);
-        SDL_SetTextureScaleMode(tex, cfg.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     }
 #endif
     {

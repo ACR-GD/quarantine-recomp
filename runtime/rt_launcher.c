@@ -95,13 +95,13 @@ static void use_path(const char *p) {
 
 // ---------------------------------------------------------------- items
 typedef struct { const char *label; int *val; int lo, hi, step; const char *const *names; } setting;
-static const char *const n_display[] = {"Window", "Fullscreen"}, *const n_scale[] = {"Sharp", "Smooth"},
+static const char *const n_display[] = {"Window", "Fullscreen"}, *const n_scale[] = {"Sharp", "Smooth", "Crisp", "CRT", "Scale4x"},
                   *const n_aspect[] = {"4:3 (CRT)", "Square pixels"},
                   *const n_limit[] = {"Off", "70 Hz"}, *const n_cp[] = {"Skip", "Show"},
                   *const n_launch[] = {"Skip", "Show"};
 static setting settings[] = {
     {"Display", &cfg.fullscreen, 0, 1, 1, n_display},
-    {"Scaling", &cfg.smooth, 0, 1, 1, n_scale},
+    {"Filter", &cfg.filter, 0, FILTER_COUNT - 1, 1, n_scale},
     {"Aspect ratio", &cfg.square, 0, 1, 1, n_aspect},
     {"Music volume", &cfg.music, 0, 100, 10, 0},
     {"Effects volume", &cfg.sfx, 0, 100, 10, 0},

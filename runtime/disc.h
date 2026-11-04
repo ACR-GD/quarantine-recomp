@@ -25,7 +25,7 @@ void disc_close(void);
 typedef struct {
     char disc[1024];      // disc image or extracted folder
     int fullscreen;       // 0/1
-    int smooth;           // scaling filter: 0 sharp (nearest), 1 smooth (linear)
+    int filter;           // FILTER_* (rt_filter.c)
     int square;           // 0 = 4:3 like a CRT, 1 = square pixels
     int music, sfx;       // volume 0..100
     int framecap;         // pace page flips to 70 Hz
@@ -33,6 +33,7 @@ typedef struct {
     int launcher;         // show the launcher at startup
 } config_t;
 extern config_t cfg;
+enum { FILTER_SHARP, FILTER_SMOOTH, FILTER_CRISP, FILTER_CRT, FILTER_SCALE4X, FILTER_COUNT };
 const char *cfg_dir(void);                // per-user folder (config.ini, data/, save/), ends with '/'
 void cfg_load(void);
 void cfg_save(void);
@@ -43,6 +44,8 @@ void cfg_save(void);
 // Runs until the player starts the game (returns 1) or quits (0). On return with 1, cfg.disc is open
 // (disc_open succeeded) and its files are installed.
 int launcher_run(SDL_Window *win, SDL_Renderer *ren, const char *initial_error);
+// Scale the game frame (w x h, XRGB) to the logical presentation area with cfg.filter.
+void filter_draw(SDL_Renderer *ren, SDL_Texture *tex, const uint32_t *fb, int w, int h);
 #endif
 
 // ---------------------------------------------------------------- hooks into the runtime
