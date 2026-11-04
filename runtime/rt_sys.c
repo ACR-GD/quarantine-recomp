@@ -1,5 +1,6 @@
 // System layer: DOS (int 21h), DPMI (int 31h), BIOS, selectors, PIC/PIT, keyboard, VGA (Mode X),
 // and the SDL3 host frontend.
+#include "compat.h"
 #include "rt.h"
 #include "sys.h"
 #include "disc.h"
@@ -16,7 +17,6 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <ctype.h>
-#include <fnmatch.h>
 #ifdef USE_SDL
 #include <SDL3/SDL.h>
 #endif
@@ -135,8 +135,7 @@ static void vga_flip(void) {
     double t = now_s();
     frame_work = t - flip_end_t;
     if (t < next) {
-        struct timespec ts = { 0, (long)((next - t) * 1e9) };
-        nanosleep(&ts, 0);
+        host_sleep_ns((uint64_t)((next - t) * 1e9));
         next += 1.0 / 70;
     } else next = (t - next > 1.0 / 70 ? t : next) + 1.0 / 70;
     flip_end_t = now_s();
@@ -300,8 +299,8 @@ static int host_path(const char *dos, char *out, size_t n, int for_write) {
     return 0;
 }
 static int copy_file(const char *src, const char *dst) {
-    int in = open(src, O_RDONLY); if (in < 0) return -1;
-    int out = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { close(in); return -1; }
+    int in = open(src, O_RDONLY | O_BINARY); if (in < 0) return -1;
+    int out = open(dst, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, 0644); if (out < 0) { close(in); return -1; }
     char buf[65536]; ssize_t r; int rc = 0;
     while ((r = read(in, buf, sizeof buf)) > 0) if (write(out, buf, r) != r) { rc = -1; break; }
     close(in); close(out); return rc;
@@ -373,7 +372,7 @@ static void dos_int21(void) {
     case 0x47: WR8(SB[3] + ESI, 0); ok(); return;
     case 0x3c: case 0x5b: {
         read_cstr(SB[3] + EDX, name, sizeof name); host_path(name, hp, sizeof hp, 1);
-        int fd = open(hp, O_RDWR | O_CREAT | O_TRUNC, 0644);
+        int fd = open(hp, O_RDWR | O_BINARY | O_CREAT | O_TRUNC, 0644);
         LOG("create %s -> %s fd %d\n", name, hp, fd);
         if (fd < 0) { err(3); return; }
         SETAX(new_handle(fd)); ok(); return;
@@ -390,8 +389,8 @@ static void dos_int21(void) {
             if (copy_file(hp, dst) == 0) { LOG("copy-on-write %s -> %s\n", hp, dst); snprintf(hp, sizeof hp, "%s", dst); }
         }
         if (found) {
-            fd = open(hp, mode == 0 ? O_RDONLY : O_RDWR);
-            if (fd < 0 && mode) fd = open(hp, O_RDONLY);
+            fd = open(hp, mode == 0 ? O_RDONLY | O_BINARY : O_RDWR | O_BINARY);
+            if (fd < 0 && mode) fd = open(hp, O_RDONLY | O_BINARY);
         }
         LOG("open %s (mode %d) -> %s fd %d\n", name, mode, found ? hp : "(not found)", fd);
         if (fd < 0) { err(2); return; }
@@ -769,8 +768,16 @@ void sys_host_tick(void) {
 
 static void *timer_thread(void *arg) {
     (void)arg;
-    for (;;) { usleep(1000); irq_pending = 1; }
+    for (;;) { host_sleep_ns(1000000); irq_pending = 1; }
     return 0;
+}
+
+void sys_fatal_box(const char *msg) {
+#ifdef USE_SDL
+    if (!headless) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Quarantine", msg, win);
+#else
+    (void)msg;
+#endif
 }
 
 void sys_shutdown(void) {
@@ -871,6 +878,7 @@ void sys_init(int argc, char **argv) {
     no_vsync = !cfg.framecap;
     rt_skip_copyprot = !cfg.copyprot;
     LOG("data %s, saves %s, config %s\n", data_dir, save_dir, cfg_dir());
+    guest_load_exe(data_dir);      // the program itself comes from the player's copy of the game
 
 #ifdef USE_SDL
     if (!headless) {

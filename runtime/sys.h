@@ -20,6 +20,7 @@ void rt_dispatch_tail_noret(uint32_t off);
 
 void sys_init(int argc, char **argv);
 void sys_shutdown(void);
+void sys_fatal_box(const char *msg);   // error dialog for players (no-op headless)
 void sys_magic(uint32_t a);
 void sys_obj2_call(uint32_t off);
 void sys_host_tick(void);

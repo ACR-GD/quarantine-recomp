@@ -1,6 +1,7 @@
 // MSCDEX + CD-audio emulation. Audio tracks are raw PCM ranges of host files (the disc image itself,
 // or WAVs from tools/extract.py); see rt_disc.c. The TOC is rebuilt from their lengths (track 1 = data,
 // 2 s pregap before track 2). With no music available, silent tracks keep the game's CD logic happy.
+#include "compat.h"
 #include "rt.h"
 #include "sys.h"
 #include "disc.h"
@@ -71,7 +72,7 @@ static void seek_stream(void) {
     cur_trk = track_of(cur_lba);
     if (cur_trk < 2) return;
     cur_byte = (uint64_t)(cur_lba - trk[cur_trk].start) * 2352;
-    cur_fd = trk[cur_trk].src.path[0] ? open(trk[cur_trk].src.path, O_RDONLY) : -2;   // -2: silent track
+    cur_fd = trk[cur_trk].src.path[0] ? open(trk[cur_trk].src.path, O_RDONLY | O_BINARY) : -2;   // -2: silent track
     if (cur_fd >= 0) lseek(cur_fd, (off_t)(trk[cur_trk].src.offset + cur_byte), SEEK_SET);
 }
 

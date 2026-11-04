@@ -1,6 +1,7 @@
 // Reading the game straight from a CD image (.cue/.bin, Nero .nrg, .iso) or from a folder made by
 // tools/extract.py. The data track's files are installed (copied) once into the user's data folder;
 // CD audio is streamed from the image at run time, so nothing large is duplicated.
+#include "compat.h"
 #include "disc.h"
 #include "../gen/image_info.h"
 #include <stdio.h>
@@ -33,7 +34,11 @@ static int fail(char *err, size_t n, const char *fmt, const char *arg) {
     if (err) snprintf(err, n, fmt, arg ? arg : "");
     return -1;
 }
-static const char *ext_of(const char *p) { const char *d = strrchr(p, '.'), *s = strrchr(p, '/'); return d && (!s || d > s) ? d : ""; }
+static const char *ext_of(const char *p) {
+    const char *d = strrchr(p, '.'), *s = strrchr(p, '/'), *b = strrchr(p, '\\');
+    if (b > s) s = b;
+    return d && (!s || d > s) ? d : "";
+}
 static int is_dir(const char *p) { struct stat st; return stat(p, &st) == 0 && S_ISDIR(st.st_mode); }
 static uint64_t fsize(const char *p) { struct stat st; return stat(p, &st) == 0 ? (uint64_t)st.st_size : 0; }
 static uint32_t be32(const uint8_t *b) { return (uint32_t)b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]; }
@@ -123,7 +128,7 @@ static void add_audio(const char *path, uint64_t off, uint64_t bytes, int swap) 
 }
 
 static int open_nrg(const char *p, char *err, size_t en) {
-    int fd = open(p, O_RDONLY); if (fd < 0) return fail(err, en, "Can't open %s", p);
+    int fd = open(p, O_RDONLY | O_BINARY); if (fd < 0) return fail(err, en, "Can't open %s", p);
     uint64_t sz = fsize(p); uint8_t f[12]; uint64_t chunks;
     if (sz < 12 || pread(fd, f, 12, (off_t)(sz - 12)) != 12) { close(fd); return fail(err, en, "Not a Nero image", 0); }
     if (!memcmp(f, "NER5", 4)) chunks = be64(f + 4);
@@ -160,7 +165,8 @@ static int msf(const char *s) { int m, sec, fr; return sscanf(s, "%d:%d:%d", &m,
 static int open_cue(const char *p, char *err, size_t en) {
     FILE *f = fopen(p, "r"); if (!f) return fail(err, en, "Can't open %s", p);
     char base[1024]; snprintf(base, sizeof base, "%s", p);
-    char *sl = strrchr(base, '/'); if (sl) *sl = 0; else strcpy(base, ".");
+    char *sl = strrchr(base, '/'), *bs = strrchr(base, '\\'); if (bs > sl) sl = bs;
+    if (sl) *sl = 0; else strcpy(base, ".");
     struct { char file[1024]; char type[16]; int idx0, idx1; } tr[MAXTRK]; int nt = 0;
     char cur[1024] = "", line[1200];
     while (fgets(line, sizeof line, f)) {
@@ -195,7 +201,7 @@ static int open_cue(const char *p, char *err, size_t en) {
         if (end <= off) continue;
         if (k == 0) {
             if (!strcasecmp(tr[k].type, "AUDIO")) return fail(err, en, "The first track is audio; this isn't a game disc", 0);
-            D.dfd = open(tr[k].file, O_RDONLY); if (D.dfd < 0) return fail(err, en, "Can't open %s", tr[k].file);
+            D.dfd = open(tr[k].file, O_RDONLY | O_BINARY); if (D.dfd < 0) return fail(err, en, "Can't open %s", tr[k].file);
             D.doff = off; D.dsz = ssz; D.dsectors = (uint32_t)((end - off) / ssz);
             D.ddata = ssz == 2048 ? 0 : ssz == 2336 ? 8 : !strcasecmp(tr[k].type, "MODE2/2352") ? 24 : 16;
         } else if (!strcasecmp(tr[k].type, "AUDIO")) add_audio(tr[k].file, off, end - off, 0);
@@ -204,14 +210,14 @@ static int open_cue(const char *p, char *err, size_t en) {
 }
 
 static int open_iso(const char *p, char *err, size_t en) {
-    D.dfd = open(p, O_RDONLY); if (D.dfd < 0) return fail(err, en, "Can't open %s", p);
+    D.dfd = open(p, O_RDONLY | O_BINARY); if (D.dfd < 0) return fail(err, en, "Can't open %s", p);
     D.doff = 0; D.dsz = 2048; D.ddata = 0; D.dsectors = (uint32_t)(fsize(p) / 2048);
     return 0;
 }
 
 // WAV made by tools/extract.py: find the "data" chunk.
 static int wav_data(const char *p, uint64_t *off, uint64_t *bytes) {
-    int fd = open(p, O_RDONLY); if (fd < 0) return -1;
+    int fd = open(p, O_RDONLY | O_BINARY); if (fd < 0) return -1;
     uint8_t h[12]; uint64_t pos = 12, sz = fsize(p); int ok = -1;
     if (pread(fd, h, 12, 0) == 12 && !memcmp(h, "RIFF", 4) && !memcmp(h + 8, "WAVE", 4))
         while (pos + 8 <= sz) {

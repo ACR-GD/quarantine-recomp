@@ -1,10 +1,13 @@
 // CPU-level runtime: state, dispatch, far control transfer, IRQ delivery, string ops, mul/div, x87.
+#include "compat.h"
 #include "rt.h"
 #include "sys.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#ifndef _WIN32
 #include <execinfo.h>
+#endif
 #include <setjmp.h>
 #include <time.h>
 
@@ -22,8 +25,7 @@ int rt_skip_copyprot = 1;
 // Called at the head of known polling loops (IDLE in recomp.py): give the host CPU back for a moment.
 // The timer thread raises irq_pending every 1 ms, so interrupts keep arriving at the same rate.
 void rt_idle(void) {
-    struct timespec ts = { 0, 500000 };
-    nanosleep(&ts, 0);
+    host_sleep_ns(500000);
     IRQCHK();
 }
 uint32_t SH[65536]; int SHP = 1;
@@ -33,16 +35,19 @@ void rt_ret_jump(uint32_t ra) {
 }
 
 _Noreturn void rt_fatal(const char *fmt, ...) {
-    va_list ap; va_start(ap, fmt);
-    fprintf(stderr, "FATAL: "); vfprintf(stderr, fmt, ap); fprintf(stderr, "\n");
-    va_end(ap);
+    char msg[1024];
+    va_list ap; va_start(ap, fmt); vsnprintf(msg, sizeof msg, fmt, ap); va_end(ap);
+    fprintf(stderr, "FATAL: %s\n", msg);
     rt_dump_state(stderr);
+    sys_fatal_box(msg);
+#ifndef _WIN32
     void *bt[48]; int n = backtrace(bt, 48);
     char **sym = backtrace_symbols(bt, n);
     fprintf(stderr, "host backtrace:");
     for (int k = 0; k < n; k++) { char *f = strstr(sym[k], " f_"); if (!f) f = strstr(sym[k], " r_"); if (!f) f = strstr(sym[k], " rt_");
                                   if (f) { char nm[64]; sscanf(f + 1, "%63s", nm); fprintf(stderr, " %s", nm); } }
     fprintf(stderr, "\n");
+#endif
     sys_shutdown();
     exit(1);
 }

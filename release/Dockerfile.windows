@@ -1,0 +1,5 @@
+# Cross-compiles the Windows build with MinGW-w64 (used by release/build-windows.sh).
+FROM ubuntu:22.04
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        make gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 zip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*

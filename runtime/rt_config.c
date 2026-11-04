@@ -1,6 +1,7 @@
 // User configuration: <pref dir>/config.ini, plain key=value lines.
 // The pref dir is SDL's per-user app folder, e.g. ~/Library/Application Support/quarantine-recomp/Quarantine/
 // on macOS, ~/.local/share/quarantine-recomp/Quarantine/ on Linux, %APPDATA%\quarantine-recomp\Quarantine\ on Windows.
+#include "compat.h"
 #include "disc.h"
 #include <stdio.h>
 #include <stdlib.h>

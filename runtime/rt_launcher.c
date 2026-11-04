@@ -84,7 +84,7 @@ static void choose_disc(void) {
     static const SDL_DialogFileFilter filters[] = {
         {"CD images (.cue, .nrg, .iso)", "cue;nrg;iso;bin"}, {"All files", "*"} };
     char dir[1024] = "";
-    if (cfg.disc[0]) { snprintf(dir, sizeof dir, "%s", cfg.disc); char *s = strrchr(dir, '/'); if (s) *s = 0; }
+    if (cfg.disc[0]) { snprintf(dir, sizeof dir, "%s", cfg.disc); char *s = strrchr(dir, '/'), *b = strrchr(dir, '\\'); if (b > s) s = b; if (s) *s = 0; }
     SDL_ShowOpenFileDialog(dialog_cb, 0, win, filters, 2, dir[0] ? dir : 0, false);
 }
 static void use_path(const char *p) {
@@ -146,7 +146,8 @@ static void draw(void) {
     background();
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     if (page == PAGE_MAIN) {
-        const char *base = cfg.disc[0] ? (strrchr(cfg.disc, '/') ? strrchr(cfg.disc, '/') + 1 : cfg.disc) : "(none)";
+        const char *base = "(none)";
+        if (cfg.disc[0]) { base = cfg.disc; for (const char *c = cfg.disc; *c; c++) if (*c == '/' || *c == '\\') base = c + 1; }
         char disc[200]; snprintf(disc, sizeof disc, "Disc image: %.40s", base);
         const char *labels[] = {"Start game", disc, "Settings", "Quit"};
         for (int i = 0; i < 4; i++) {
@@ -178,6 +179,7 @@ static void draw(void) {
         }
     }
     text_c(452, 1, GREY, "Arrows/D-pad move   Enter/A select   Esc/B back   Left/Right change");
+    text(W - 8 - text_w("v" QUAR_VERSION, 1), 468, 1, DIM, "v" QUAR_VERSION);
     if (nlt) test_step();
     SDL_RenderPresent(ren);
 }

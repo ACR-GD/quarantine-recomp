@@ -23,6 +23,7 @@ extern uint8_t *MEM;
 
 void set_sreg(int s, uint16_t sel);
 _Noreturn void rt_fatal(const char *fmt, ...);
+void guest_load_exe(const char *dir);   // rt_le.c
 void rt_unimpl(uint32_t addr, const char *what);
 
 // ---------------------------------------------------------------- memory

@@ -1,0 +1,16 @@
+# Linux x86-64 build environment (used by release/build-linux.sh). Ubuntu 22.04 (glibc 2.35) so the
+# binary runs on most current distributions. SDL3 is built from source with the usual video/audio
+# backends; SDL loads X11/Wayland/PulseAudio/PipeWire/ALSA at run time from the player's system.
+FROM --platform=linux/amd64 ubuntu:22.04
+ARG SDL_VER=3.4.20
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential clang cmake ninja-build pkg-config curl ca-certificates patchelf \
+        libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+        libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev \
+        libgles2-mesa-dev libdrm-dev libgbm-dev libasound2-dev libpulse-dev libpipewire-0.3-dev \
+        libdbus-1-dev libudev-dev libibus-1.0-dev libusb-1.0-0-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl -fL https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VER/SDL3-$SDL_VER.tar.gz | tar -xz -C /tmp \
+    && cmake -S /tmp/SDL3-$SDL_VER -B /tmp/sdl-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/sdl3 \
+         -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_STATIC=OFF \
+    && cmake --build /tmp/sdl-build && cmake --install /tmp/sdl-build && rm -rf /tmp/SDL3-$SDL_VER /tmp/sdl-build
